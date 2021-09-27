@@ -22,6 +22,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -33,9 +34,10 @@ func main() {
 
 	fmt.Printf("Downloading:\n %s into ——> %s\n", args[0], args[1])
 
-	f, err := Decode([]byte(args[1]))
+	f, err := Decode(args[0])
 	if err != nil {
-		return
+		// log.fatal's in main, because other errors should bubble up to here
+		log.Fatal(err)
 	}
 	fmt.Println(f)
 }
