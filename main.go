@@ -25,8 +25,6 @@ import (
 	"os"
 )
 
-/*
- */
 func main() {
 	// USAGE: exileum  [output path]
 
@@ -34,4 +32,21 @@ func main() {
 	// todo: support magnet links and hosted torrent files
 
 	fmt.Printf("Downloading:\n %s into ——> %s\n", args[0], args[1])
+
+	f, err := Decode([]byte(args[1]))
+	if err != nil {
+		return
+	}
+	fmt.Println(f)
 }
+
+/*
+bad:
+main ––> Client.init (now removed) ––> Decode ––> Client
+
+good:
+main ––> Decode ––> Client
+
+why?
+Decode is an arbitrary operation as far as Client is concerned because it precedes Client's instantiation; thus it should not be causally coupled and or managed by Client itself
+*/
