@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/IncSW/go-bencode"
@@ -20,6 +21,19 @@ func Decode(fp string) (*interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("hi world", data)
+	logger("logs.txt", data)
+
 	return &data, nil
+}
+
+func logger(outpath string, dataToLog interface{}) {
+	out, err := os.OpenFile(outpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return
+	}
+	defer out.Close()
+
+	byteKey := []byte(fmt.Sprintf("%v", dataToLog.(interface{})))
+	out.Write(byteKey)
+	log.SetOutput(out)
 }
