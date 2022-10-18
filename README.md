@@ -25,3 +25,16 @@ tbd:
 
 ## Contributing
 Welcomed! 
+
+
+## Notes
+
+1. connect to tracker
+    - GET announce key in metainfo
+    - RESPONSE: a list of peers 
+
+
+
+functions:
+- main
+- function that makes initial annoucne request response
