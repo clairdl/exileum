@@ -1,54 +1,135 @@
-/*
-1. skeleton core functionality
-2. write tests (TDD paradigm)
-3. implement and iterate
-
-general flow:
-- user runs binary and passes path to a .torrent file (url and magnet support is next)
-
-- start go routine to parse .torrent file, send data back through channel incrementally
-	blocking ops/pieces of data:
-
-		- `annouce`: required to get peer list from tracker
-		- `info`: required for validating downloaded pieces
-
-- when i get `announce` from channel, send GET to tracker for peer list, the response should be:
-		{
-			`interval`: number of seconds until we should GET the updated peer list
-			`peers`: byte array, list of ip/port addresses, chunked into 6 bytes
-		}
-*/
 package main
 
 import (
+	"crypto/sha1"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
+	"math/rand"
+	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"runtime"
+
+	bencode "github.com/anacrolix/torrent/bencode"
 )
 
-func main() {
-	// USAGE: exileum  [output path]
-
-	args := os.Args[1:]
-	// todo: support magnet links and hosted torrent files
-
-	fmt.Printf("Downloading:\n %s into ——> %s\n", args[0], args[1])
-
-	f, err := Decode(args[0])
-	if err != nil {
-		// log.fatal's in main, because other errors should bubble up to here
-		log.Fatal(err)
-	}
-	fmt.Println(f)
+type bdecodedInfo struct {
+	Name        string `bencode:"name"`
+	Length      int    `bencode:"length"`
+	PieceLength int    `bencode:"piece length"`
+	Pieces      string `bencode:"pieces"`
 }
 
-/*
-bad:
-main ––> Client.init (now removed) ––> Decode ––> Client
+type bdecodedFile struct {
+	Announce     string       `bencode:"announce"`
+	PublisherUrl string       `bencode:"publisher-url"`
+	Info         bdecodedInfo `bencode:"info"`
+	InfoHash     [20]byte
+	PeerId       [20]byte
+}
 
-good:
-main ––> Decode ––> Client
+// USAGE: exileum [path to torrent file] [output path]
+func main() {
 
-why?
-Decode is an arbitrary operation as far as Client is concerned because it precedes Client's instantiation; thus it should not be causally coupled and or managed by Client itself
-*/
+	// Setup
+	args := os.Args[1:]
+	var torStruct bdecodedFile
+	var pts = &torStruct
+
+	// rawTorrentfile := make(map[string]interface{}) //t
+
+	if !isInputValid() {
+		log.Fatal("Input invalid, check if input and output filepaths are valid")
+	}
+
+	// build torrent filepath
+	torrentFilePath := getFilePath(args[0])
+
+	// read torrent file into memory
+	openedFilepath, err := os.ReadFile(torrentFilePath)
+	ErrCheck(err)
+
+	// unmarshal into rawTorrentfile empty interface basically
+	// if err := bencode.Unmarshal(openedFilepath, &rawTorrentfile); err != nil {
+	// 	panic(err)
+	// }
+
+	// unmarshal into main struct
+	if err1 := bencode.Unmarshal(openedFilepath, &torStruct); err1 != nil {
+		panic(err1)
+	}
+	pts.computeInfoHash()
+	pts.computePeerId()
+	fmt.Println("\n\n INFOHASH \n\n", torStruct.InfoHash)
+
+	prettyprint, _ := json.MarshalIndent(torStruct, "", "    ")
+	fmt.Println(string(prettyprint))
+
+	// fmt.Println(hex.EncodeToString(torStruct.InfoHash[:]))
+
+	pts.getPeerlistRequestURL()
+}
+
+func isInputValid() bool {
+	if len(os.Args) < 2 {
+		return false
+	} else {
+		return true
+	}
+}
+
+func getFilePath(file string) (filepath string) {
+	_, fullWorkingDir, _, _ := runtime.Caller(0)
+	workingDir, _ := path.Split(fullWorkingDir)
+	return workingDir + file
+}
+
+// adds the InfoHash key to the bdecodedFile struct
+func (i *bdecodedFile) computeInfoHash() {
+	data, err := bencode.Marshal(i.Info)
+	if err != nil {
+		panic(err) // panic v fatal
+	}
+	i.InfoHash = sha1.Sum(data)
+}
+
+func (i *bdecodedFile) computePeerId() {
+	r := make([]byte, 1)
+	rand.Read(r)
+	i.PeerId = sha1.Sum(r)
+}
+
+// returns the tracker URL with params included
+func (i *bdecodedFile) getPeerlistRequestURL() {
+
+	base, err := url.Parse(i.Announce)
+	fmt.Println(base)
+	ErrCheck(err)
+
+	v := url.Values{}
+	v.Set("info_hash", string(i.InfoHash[:]))
+	v.Set("peer_id", string(i.PeerId[:]))
+
+	base.RawQuery = v.Encode()
+	fmt.Println(base.String())
+
+	fmt.Println(base.RawQuery)
+
+	req, _ := http.NewRequest("GET", base.String(), nil)
+	res, err := http.DefaultClient.Do(req)
+	ErrCheck(err)
+	body, _ := ioutil.ReadAll(res.Body)
+	fmt.Println(res)
+	fmt.Println(string(body))
+
+	res.Body.Close()
+
+	// url := "http://bt3.t-ru.org/ann?info_hash=ef8c5b770da5119f584eacb61c024251fc112d03&left=5854908&peer_id=fdcb4c5d2e905e1526c373e34663204d65d0777e"
+
+	// http://bt3.t-ru.org/ann
+	// ?info_hash=ef8c5b770da5119f584eacb61c024251fc112d03
+	// &peer_id=fdcb4c5d2e905e1526c373e34663204d65d0777e
+}
